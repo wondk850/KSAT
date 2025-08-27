@@ -2,11 +2,20 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale-1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 영어 변형문제 생성기</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       .print-only { display: none; }
+      /* Hide spinners from number inputs for a cleaner UI */
+      input[type=number]::-webkit-inner-spin-button, 
+      input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none; 
+        margin: 0; 
+      }
+      input[type=number] {
+        -moz-appearance: textfield;
+      }
     </style>
     <script type="importmap">
 {

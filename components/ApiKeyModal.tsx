@@ -63,7 +63,7 @@ export function ApiKeyModal({ isOpen, onClose, onSave, currentApiKey }: ApiKeyMo
             onChange={(e) => setApiKeyInput(e.target.value)}
             placeholder="여기에 API 키를 붙여넣으세요"
             className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400
-                       focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                       text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             autoFocus
           />
         </div>

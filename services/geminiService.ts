@@ -1,66 +1,98 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { QuestionType, GeneratedQuestion } from "../types";
+// FIX: Separate enum imports from type-only imports. `QuestionType` and `Difficulty` are enums used as values, so they must be imported as values.
+import { QuestionType, Difficulty } from "../types";
+import type { GeneratedQuestion, VocabularyEntry } from "../types";
 
-const responseSchema = {
+// --- Schema for generating questions ---
+const questionResponseSchema = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
     properties: {
-      type: {
-        type: Type.STRING,
-        description: "The type of question.",
-      },
-      question: {
-        type: Type.STRING,
-        description: "The question text. For fill-in-the-blank, use '___' for the blank. For grammar/vocabulary questions, include the passage with numbered/underlined words.",
-      },
-      options: {
-        type: Type.ARRAY,
-        description: "An array of 5 options for multiple-choice questions. Not required for other types.",
-        items: {
-          type: Type.STRING,
-        },
-      },
-      answer: {
-        type: Type.STRING,
-        description: "The correct answer. For multiple choice, this should be the full text of the correct option.",
-      },
-      explanation: {
-        type: Type.STRING,
-        description: "A brief explanation of why the answer is correct, in Korean.",
-      },
+      type: { type: Type.STRING },
+      question: { type: Type.STRING },
+      options: { type: Type.ARRAY, items: { type: Type.STRING } },
+      answer: { type: Type.STRING },
+      explanation: { type: Type.STRING },
     },
     required: ["type", "question", "answer", "explanation"],
   },
 };
 
+// --- Schema for generating vocabulary notes ---
+const vocabularyResponseSchema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      word: { type: Type.STRING, description: "The extracted key vocabulary word." },
+      definition: { type: Type.STRING, description: "A clear and concise definition in English (like in an English-English dictionary)." },
+      synonyms: { type: Type.ARRAY, description: "An array of relevant synonyms in English.", items: { type: Type.STRING } },
+      antonyms: { type: Type.ARRAY, description: "An array of relevant antonyms in English.", items: { type: Type.STRING } },
+      exampleSentence: { type: Type.STRING, description: "The exact sentence from the passage where the word appears." },
+    },
+    required: ["word", "definition", "exampleSentence"],
+  },
+};
+
+
 export async function generateQuestions(
   passage: string,
-  questionTypes: QuestionType[]
+  questionConfig: Map<QuestionType, number>,
+  difficulty: Difficulty,
+  apiKey: string,
+  signal?: AbortSignal
 ): Promise<GeneratedQuestion[]> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  if (!apiKey) {
+    throw new Error("API 키가 제공되지 않았습니다. API 키를 설정해주세요.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
+  const difficultyInstruction = {
+    [Difficulty.EASY]: "Questions should be straightforward, testing direct comprehension with clear answers and obvious distractors.",
+    [Difficulty.NORMAL]: "Questions should be on par with the Korean CSAT (수능). They must require some analytical skill, and distractors should be plausible and based on common student mistakes.",
+    [Difficulty.HARD]: "Questions should be highly challenging, requiring deep inferential reasoning. Distractors must be very subtle and nuanced, designed to trap even high-achieving students. The logic for the correct answer might be complex."
+  }
+
+  const requestedTypesString = Array.from(questionConfig.entries())
+    .filter(([, count]) => count > 0)
+    .map(([type, count]) => `${type} (${count}개)`)
+    .join(", ");
 
   const prompt = `
-    You are an expert creator of English exam questions for Korean high school students. The questions should be similar in style to those found in the Korean CSAT (수능) or high school internal exams (내신).
+    You are an expert creator of English exam questions for Korean high school students. Your goal is to create high-quality, challenging, and fair questions that accurately test a student's comprehension and analytical skills.
 
-    Based on the following passage, generate a set of questions.
-    The question types required are: ${questionTypes.join(", ")}.
+    **Crucial Instruction 1: Difficulty Level**
+    Adjust the difficulty of ALL generated questions to the following level: **${difficulty}**.
+    - **Difficulty Guideline:** ${difficultyInstruction[difficulty]}
+
+    **Crucial Instruction 2: Exact Quantities**
+    You MUST generate the EXACT number of questions specified for each type. This is not a suggestion but a strict requirement. For example, if '${QuestionType.FillInTheBlank} (3개)' is requested, you MUST generate exactly 3 '${QuestionType.FillInTheBlank}' questions.
+
+    Based on the following passage, generate a set of questions for the requested types and quantities: **${requestedTypesString}**.
+
+    General Rules:
+    - All multiple-choice questions must have 5 options, unless it's a type like Word Scramble.
+    - Provide all explanations in Korean.
+    - The incorrect options (distractors) are as important as the correct answer. They should be plausible and based on common student mistakes or misinterpretations of the text. Avoid creating options that are obviously wrong or irrelevant.
     
-    Provide explanations in Korean.
+    Specific Rules for Question Types:
+    - ${QuestionType.MainIdea}: Multiple-choice. Options in English. Distractors should be subtly incorrect (too broad, too narrow).
+    - ${QuestionType.Mood}: Multiple-choice. Options should be pairs of adjectives in English (e.g., 'anxious → relieved').
+    - ${QuestionType.Claim}: Multiple-choice. Options MUST BE IN KOREAN.
+    - ${QuestionType.InferentialMeaning}: Multiple-choice. Underline a phrase and ask for its contextual meaning. Options must be in English.
+    - ${QuestionType.Comprehension}: Multiple-choice. Ask what is true ('일치') or not true ('불일치'). Options MUST BE IN KOREAN.
+    - ${QuestionType.Grammar}: Multiple-choice. Present passage with five underlined parts (①-⑤), one is grammatically wrong.
+    - ${QuestionType.Vocabulary}: Multiple-choice. Present passage with five underlined words (①-⑤), one is contextually wrong.
+    - ${QuestionType.FillInTheBlank}: Multiple-choice. Replace a key phrase with a blank. 5 tempting English options.
+    - ${QuestionType.IrrelevantSentence}: IMPORTANT: First, INSERT A NEW, ORIGINAL SENTENCE that is topically related but disrupts logical flow. Then, number all sentences ① to ⑤. The question asks to find the irrelevant sentence.
+    - ${QuestionType.ReorderParagraph}: Divide the passage into three blocks (A), (B), (C) after an intro sentence. Ask for the correct order.
+    - ${QuestionType.SentenceInsertion}: Provide a new sentence in a box. The passage must have insertion points [①], [②], etc.
+    - ${QuestionType.SummaryCompletion}: One-sentence summary with two blanks, (A) and (B). Choose words from 5 options.
+    - ${QuestionType.PronounReference}: Five underlined pronouns/phrases (①-⑤), ask which one refers to a different entity.
+    - ${QuestionType.WordScramble}: (Non-multiple choice) Provide scrambled words of a key sentence. The 'answer' is the correct sentence.
 
-    Please adhere to the following rules for each question type:
-    - 주제/제목 찾기 (Main Idea/Title): Create a multiple-choice question asking for the main idea, topic, or best title for the passage. Provide 5 distinct options.
-    - 내용 일치/불일치 (Comprehension - True/False): Create a multiple-choice question asking what is true or not true according to the passage. Provide 5 options.
-    - 빈칸 추론 (Fill-in-the-Blank): Find a key sentence and remove a crucial phrase, replacing it with a blank (e.g., '_______'). The question should be multiple-choice with 5 options to fill the blank.
-    - 어법성 판단 (Grammar Correction): Rewrite a portion of the text, underlining 5 parts and labeling them ①, ②, ③, ④, ⑤. One of these parts must contain a grammatical error. The 'question' field should contain this text followed by the question "위 글의 밑줄 친 부분 중, 어법상 틀린 것은?". The 'options' should be the 5 underlined phrases. The 'answer' should be the incorrect phrase.
-    - 어휘 추론 (Vocabulary in Context): Similar to '어법성 판단', but the error should be a word used incorrectly in its context. Rewrite a portion of the text, underlining 5 words and labeling them ①, ②, ③, ④, ⑤. One of these words must be contextually inappropriate. The 'question' field should contain this text followed by the question "밑줄 친 부분 중 문맥상 낱말의 쓰임이 적절하지 않은 것은?". The 'options' should be the 5 underlined words. The 'answer' should be the incorrect word.
-    - 문장 삽입 (Sentence Insertion): Provide a new sentence that logically fits somewhere in the passage. The question should be "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳은?" followed by the sentence to be inserted in a box. The passage in the 'question' field should have numbered insertion points like [①], [②], etc. The options should be ['①', '②', '③', '④', '⑤'].
-    - 순서 배열 (Paragraph Ordering): The question should start with an introductory sentence from the passage. Then, present the rest of the passage divided into three blocks: (A), (B), and (C). The question prompt should be "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?". The 'question' field should contain the blocks. The options should be orderings like '(A)-(C)-(B)', '(B)-(A)-(C)', etc.
-    - 요약문 완성 (Summary Completion): Provide a one-sentence summary of the passage with one or two blanks, (A) and (B). The question is to choose the words for the blanks from the options.
-    - 서술형 (단어 배열) (Word Scramble): Select a key sentence from the passage. Provide the words in a scrambled order. The question must ask the user to arrange them into a correct sentence, possibly with a Korean translation hint. Do not provide options for this type. The 'answer' should be the correct, complete sentence.
-
-    Return the output strictly in the specified JSON format. Ensure all multiple-choice questions have 5 options.
+    Return the output strictly in the specified JSON format.
 
     Passage:
     ---
@@ -69,59 +101,92 @@ export async function generateQuestions(
   `;
 
   try {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        temperature: 0.7,
+        responseSchema: questionResponseSchema,
       },
     });
 
-    const jsonText = response.text.trim();
-    const generatedData = JSON.parse(jsonText);
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    if (Array.isArray(generatedData)) {
-      const sanitizedQuestions: GeneratedQuestion[] = [];
-      const validTypes = Object.values(QuestionType);
-
-      for (const item of generatedData) {
-        // Strict validation of the item structure
-        if (
-          !item ||
-          typeof item.type !== 'string' ||
-          !validTypes.includes(item.type as QuestionType) ||
-          typeof item.question !== 'string' ||
-          typeof item.answer !== 'string' ||
-          typeof item.explanation !== 'string'
-        ) {
-          console.warn('Skipping malformed question item:', item);
-          continue; // Skip this item
-        }
-
-        // Validate options if they exist
-        if (item.options !== undefined) {
-          if (!Array.isArray(item.options) || !item.options.every(opt => typeof opt === 'string')) {
-            console.warn('Skipping question item with malformed options:', item);
-            continue; // Skip this item
-          }
-        }
-        
-        // The item is valid, add it to the list
-        sanitizedQuestions.push({
-          type: item.type as QuestionType,
-          question: item.question,
-          options: item.options,
-          answer: item.answer,
-          explanation: item.explanation,
-        });
-      }
-      return sanitizedQuestions;
-    }
-    return [];
+    const jsonString = response.text.trim();
+    // Sometimes the model might return a markdown block
+    const cleanedJsonString = jsonString.startsWith('```json') ? jsonString.replace(/^```json\n|```$/g, '') : jsonString;
+    const generated = JSON.parse(cleanedJsonString) as GeneratedQuestion[];
+    return generated;
   } catch (error) {
     console.error("Error generating questions from Gemini API:", error);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     throw new Error("AI로부터 받은 응답을 처리하는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
+  }
+}
+
+export async function generateVocabularyNotes(
+  passage: string,
+  apiKey: string,
+  signal?: AbortSignal,
+  words?: string[]
+): Promise<VocabularyEntry[]> {
+  if (!apiKey) {
+    throw new Error("API 키가 제공되지 않았습니다. API 키를 설정해주세요.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
+  const selectionInstruction = words && words.length > 0
+    ? `Analyze ONLY the following user-selected words: ${words.join(', ')}.`
+    : `Extract the 10 most essential and high-value vocabulary words from the provided passage. Select words that are distributed throughout the passage, not just clustered in one section.`;
+
+
+  const prompt = `
+    You are an expert English vocabulary analyst for advanced English learners.
+    ${selectionInstruction}
+
+    For each word, you MUST provide the following in ENGLISH:
+    1.  **word**: The vocabulary word itself.
+    2.  **definition**: A clear, concise definition in ENGLISH (like in an English-English dictionary).
+    3.  **synonyms**: A list of 2-3 relevant synonyms in ENGLISH. If none, provide an empty array.
+    4.  **antonyms**: A list of 1-2 relevant antonyms in ENGLISH. If none, provide an empty array.
+    5.  **exampleSentence**: The exact sentence from the passage where the word is used.
+
+    Focus on words that are crucial for understanding the passage's main idea and nuances (e.g., academic, abstract, or context-specific terms). Avoid overly simple or common words unless specified by the user.
+    Return the output strictly in the specified JSON format.
+
+    Passage:
+    ---
+    ${passage}
+    ---
+  `;
+
+  try {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: vocabularyResponseSchema,
+      },
+    });
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const jsonString = response.text.trim();
+    const cleanedJsonString = jsonString.startsWith('```json') ? jsonString.replace(/^```json\n|```$/g, '') : jsonString;
+    const notes = JSON.parse(cleanedJsonString) as VocabularyEntry[];
+    return notes;
+  } catch (error) {
+    console.error("Error generating vocabulary notes from Gemini API:", error);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new Error("AI로부터 받은 어휘 노트를 처리하는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
   }
 }

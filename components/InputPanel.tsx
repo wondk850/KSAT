@@ -1,51 +1,96 @@
-import React from 'react';
-import { UploadIcon, TextIcon } from './icons';
-import { DEMO_TEXT } from '../constants';
+import React, { useState } from 'react';
 
 interface InputPanelProps {
   inputText: string;
   setInputText: (text: string) => void;
+  selectedWords: Set<string>;
+  onWordToggle: (word: string) => void;
+  onLoadNewExample: () => void;
 }
 
-export function InputPanel({ inputText, setInputText }: InputPanelProps): React.ReactNode {
-  
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // 실제 앱에서는 백엔드에서 OCR 처리를 수행합니다.
-      // 이 데모에서는 메시지를 표시하고 예시 텍스트를 사용합니다.
-      setInputText(`[${file.name} 파일 OCR 시뮬레이션]\n\n이것은 임시 텍스트입니다. 실제 애플리케이션에서는 PDF 또는 이미지 파일의 텍스트가 추출되어 여기에 표시됩니다.`);
+const tokenize = (text: string): string[] => {
+  return text.split(/(\s+|[.,?!:;()"'])/g).filter(Boolean);
+};
+
+export function InputPanel({ inputText, setInputText, selectedWords, onWordToggle, onLoadNewExample }: InputPanelProps): React.ReactNode {
+  const [isEditing, setIsEditing] = useState(inputText.length < 10);
+
+  const handleWordClick = (word: string) => {
+    const cleanedWord = word.trim().replace(/^[.,?!:;()"']+|[.,?!:;()"']+$/g, '');
+    if (cleanedWord && isNaN(Number(cleanedWord))) {
+      onWordToggle(cleanedWord);
     }
   };
   
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-md space-y-4">
-      <h2 className="text-lg font-semibold text-slate-700 flex items-center">
-        <TextIcon />
-        <span className="ml-2">1. 영어 지문 입력</span>
-      </h2>
-      
-      <textarea
-        value={inputText}
-        onChange={(e) => setInputText(e.target.value)}
-        placeholder="변형 문제를 만들 영어 지문을 여기에 붙여넣으세요..."
-        className="w-full h-64 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out text-sm"
-      />
+  const startEditing = () => {
+    setIsEditing(true);
+  }
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <label
-          htmlFor="file-upload"
-          className="flex-1 text-center bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg cursor-pointer transition duration-150 flex items-center justify-center space-x-2"
-        >
-          <UploadIcon />
-          <span>PDF/이미지 업로드</span>
-          <input id="file-upload" type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} />
-        </label>
+  const finishEditing = () => {
+    // Trim text and only exit editing if there's content, preventing empty state lock.
+    if(inputText.trim()){
+      setIsEditing(false);
+    }
+  }
+
+
+  if (isEditing) {
+    return (
+      <div className="space-y-4">
+        <textarea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="변형 문제를 만들 영어 지문을 여기에 붙여넣으세요..."
+          className="w-full h-64 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out text-sm text-slate-800"
+          autoFocus
+        />
         <button
-          onClick={() => setInputText(DEMO_TEXT)}
-          className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-2 px-4 rounded-lg transition duration-150"
+          onClick={finishEditing}
+          disabled={!inputText.trim()}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg disabled:bg-slate-400 transition"
         >
-          예시 지문 불러오기
+          단어 선택 모드로 전환
+        </button>
+      </div>
+    );
+  }
+
+  const tokens = tokenize(inputText);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        아래 지문에서 단어를 클릭하여 어휘 노트를 만들 단어를 선택하세요.
+      </p>
+      <div className="w-full h-64 p-3 border border-slate-300 rounded-lg overflow-y-auto leading-relaxed text-sm bg-slate-50 text-slate-800">
+        {tokens.map((token, index) => {
+          const cleanedWord = token.trim().replace(/^[.,?!:;()"']+|[.,?!:;()"']+$/g, '');
+          const isWord = cleanedWord && isNaN(Number(cleanedWord));
+          const isSelected = isWord && selectedWords.has(cleanedWord);
+
+          return (
+            <span
+              key={index}
+              onClick={() => handleWordClick(token)}
+              className={`${isWord ? 'cursor-pointer' : ''} transition-colors rounded ${isSelected ? 'bg-yellow-200 text-yellow-900' : (isWord ? 'hover:bg-blue-100' : '')}`}
+            >
+              {token}
+            </span>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={startEditing}
+          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition"
+        >
+          지문 수정
+        </button>
+        <button
+          onClick={onLoadNewExample}
+          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition"
+        >
+          다른 예시 지문 보기
         </button>
       </div>
     </div>
