@@ -3,11 +3,14 @@ import { QuestionType, GeneratedQuestion } from "../types";
 
 const API_KEY = process.env.API_KEY;
 
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable is not set.");
+// Initialize ai variable, but it can be null if API_KEY is not set.
+let ai: GoogleGenAI | null = null;
+if (API_KEY) {
+  ai = new GoogleGenAI({ apiKey: API_KEY });
+} else {
+  console.warn("API_KEY environment variable is not set. The application will load, but question generation will fail.");
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const responseSchema = {
   type: Type.ARRAY,
@@ -46,6 +49,10 @@ export async function generateQuestions(
   passage: string,
   questionTypes: QuestionType[]
 ): Promise<GeneratedQuestion[]> {
+  if (!ai) {
+    throw new Error("API 키가 설정되지 않았습니다. 배포 환경(예: GitHub Secrets)에 API_KEY를 설정했는지 확인해주세요.");
+  }
+  
   const prompt = `
     You are an expert creator of English exam questions for Korean high school students. The questions should be similar in style to those found in the Korean CSAT (수능) or high school internal exams (내신).
 
