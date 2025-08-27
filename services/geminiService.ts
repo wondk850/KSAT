@@ -1,16 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { QuestionType, GeneratedQuestion } from "../types";
-
-const API_KEY = process.env.API_KEY;
-
-// Initialize ai variable, but it can be null if API_KEY is not set.
-let ai: GoogleGenAI | null = null;
-if (API_KEY) {
-  ai = new GoogleGenAI({ apiKey: API_KEY });
-} else {
-  console.warn("API_KEY environment variable is not set. The application will load, but question generation will fail.");
-}
-
 
 const responseSchema = {
   type: Type.ARRAY,
@@ -47,12 +37,15 @@ const responseSchema = {
 
 export async function generateQuestions(
   passage: string,
-  questionTypes: QuestionType[]
+  questionTypes: QuestionType[],
+  apiKey: string
 ): Promise<GeneratedQuestion[]> {
-  if (!ai) {
-    throw new Error("API 키가 설정되지 않았습니다. 배포 환경(예: GitHub Secrets)에 API_KEY를 설정했는지 확인해주세요.");
+  if (!apiKey) {
+    throw new Error("API 키가 제공되지 않았습니다.");
   }
   
+  const ai = new GoogleGenAI({ apiKey: apiKey });
+
   const prompt = `
     You are an expert creator of English exam questions for Korean high school students. The questions should be similar in style to those found in the Korean CSAT (수능) or high school internal exams (내신).
 
@@ -134,6 +127,9 @@ export async function generateQuestions(
     return [];
   } catch (error) {
     console.error("Error generating questions from Gemini API:", error);
-    throw new Error("AI로부터 받은 응답을 처리하는 데 실패했습니다. 모델이 유효하지 않은 형식을 반환했을 수 있습니다.");
+    if (error instanceof Error && error.message.includes('API key not valid')) {
+       throw new Error("제공된 API 키가 유효하지 않습니다. 키를 다시 확인해주세요.");
+    }
+    throw new Error("AI로부터 받은 응답을 처리하는 데 실패했습니다. 모델이 유효하지 않은 형식을 반환했거나 API 키에 문제가 있을 수 있습니다.");
   }
 }
