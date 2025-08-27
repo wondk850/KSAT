@@ -1,10 +1,9 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Header } from './components/Header';
 import { InputPanel } from './components/InputPanel';
 import { ConfigPanel } from './components/ConfigPanel';
 import { OutputPanel } from './components/OutputPanel';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import type { GeneratedQuestion, QuestionType } from './types';
 import { generateQuestions } from './services/geminiService';
 
@@ -14,32 +13,8 @@ export default function App(): React.ReactNode {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
   const [error, setError] = useState<string | null>(null);
-  
-  // State for API Key management
-  const [apiKey, setApiKey] = useState<string>('');
-  const [isApiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
-
-  // Load API key from session storage on initial render
-  useEffect(() => {
-    const storedApiKey = sessionStorage.getItem('gemini-api-key');
-    if (storedApiKey) {
-      setApiKey(storedApiKey);
-    }
-  }, []);
-
-  const handleSaveApiKey = (newApiKey: string) => {
-    setApiKey(newApiKey);
-    sessionStorage.setItem('gemini-api-key', newApiKey);
-    setApiKeyModalOpen(false);
-    setError(null); // Clear previous errors
-  };
 
   const handleGenerate = useCallback(async () => {
-    if (!apiKey) {
-      setError('API 키를 설정해주세요. 우측 상단의 열쇠 아이콘을 클릭하여 키를 입력할 수 있습니다.');
-      setApiKeyModalOpen(true);
-      return;
-    }
     if (!inputText.trim()) {
       setError('지문을 입력해주세요.');
       return;
@@ -54,7 +29,7 @@ export default function App(): React.ReactNode {
     setGeneratedQuestions([]);
 
     try {
-      const questions = await generateQuestions(inputText, Array.from(selectedTypes), apiKey);
+      const questions = await generateQuestions(inputText, Array.from(selectedTypes));
       setGeneratedQuestions(questions);
     } catch (err) {
       console.error(err);
@@ -63,11 +38,11 @@ export default function App(): React.ReactNode {
     } finally {
       setIsLoading(false);
     }
-  }, [inputText, selectedTypes, apiKey]);
+  }, [inputText, selectedTypes]);
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-800">
-      <Header onOpenApiKeyModal={() => setApiKeyModalOpen(true)} />
+      <Header />
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-4 space-y-8">
@@ -91,12 +66,6 @@ export default function App(): React.ReactNode {
           </div>
         </div>
       </main>
-      <ApiKeyModal
-        isOpen={isApiKeyModalOpen}
-        onClose={() => setApiKeyModalOpen(false)}
-        onSave={handleSaveApiKey}
-        currentApiKey={apiKey}
-      />
     </div>
   );
 }

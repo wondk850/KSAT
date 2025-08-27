@@ -37,14 +37,9 @@ const responseSchema = {
 
 export async function generateQuestions(
   passage: string,
-  questionTypes: QuestionType[],
-  apiKey: string
+  questionTypes: QuestionType[]
 ): Promise<GeneratedQuestion[]> {
-  if (!apiKey) {
-    throw new Error("API 키가 제공되지 않았습니다.");
-  }
-  
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `
     You are an expert creator of English exam questions for Korean high school students. The questions should be similar in style to those found in the Korean CSAT (수능) or high school internal exams (내신).
@@ -127,9 +122,6 @@ export async function generateQuestions(
     return [];
   } catch (error) {
     console.error("Error generating questions from Gemini API:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-       throw new Error("제공된 API 키가 유효하지 않습니다. 키를 다시 확인해주세요.");
-    }
-    throw new Error("AI로부터 받은 응답을 처리하는 데 실패했습니다. 모델이 유효하지 않은 형식을 반환했거나 API 키에 문제가 있을 수 있습니다.");
+    throw new Error("AI로부터 받은 응답을 처리하는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
   }
 }
