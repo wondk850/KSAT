@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { GeneratedQuestion, QuestionType } from "../types";
+import { QuestionType, GeneratedQuestion } from "../types";
 
 const API_KEY = process.env.API_KEY;
 
@@ -88,13 +88,41 @@ export async function generateQuestions(
     const generatedData = JSON.parse(jsonText);
 
     if (Array.isArray(generatedData)) {
-      return generatedData.map((item: any) => ({
-        type: item.type as QuestionType,
-        question: item.question,
-        options: item.options,
-        answer: item.answer,
-        explanation: item.explanation,
-      }));
+      const sanitizedQuestions: GeneratedQuestion[] = [];
+      const validTypes = Object.values(QuestionType);
+
+      for (const item of generatedData) {
+        // Strict validation of the item structure
+        if (
+          !item ||
+          typeof item.type !== 'string' ||
+          !validTypes.includes(item.type as QuestionType) ||
+          typeof item.question !== 'string' ||
+          typeof item.answer !== 'string' ||
+          typeof item.explanation !== 'string'
+        ) {
+          console.warn('Skipping malformed question item:', item);
+          continue; // Skip this item
+        }
+
+        // Validate options if they exist
+        if (item.options !== undefined) {
+          if (!Array.isArray(item.options) || !item.options.every(opt => typeof opt === 'string')) {
+            console.warn('Skipping question item with malformed options:', item);
+            continue; // Skip this item
+          }
+        }
+        
+        // The item is valid, add it to the list
+        sanitizedQuestions.push({
+          type: item.type as QuestionType,
+          question: item.question,
+          options: item.options,
+          answer: item.answer,
+          explanation: item.explanation,
+        });
+      }
+      return sanitizedQuestions;
     }
     return [];
   } catch (error) {

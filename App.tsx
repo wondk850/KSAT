@@ -16,11 +16,11 @@ export default function App(): React.ReactNode {
 
   const handleGenerate = useCallback(async () => {
     if (!inputText.trim()) {
-      setError('Please enter some text to generate questions.');
+      setError('지문을 입력해주세요.');
       return;
     }
     if (selectedTypes.size === 0) {
-      setError('Please select at least one question type.');
+      setError('하나 이상의 문제 유형을 선택해주세요.');
       return;
     }
 
@@ -33,7 +33,8 @@ export default function App(): React.ReactNode {
       setGeneratedQuestions(questions);
     } catch (err) {
       console.error(err);
-      setError('Failed to generate questions. Please check your API key and try again.');
+      const errorMessage = err instanceof Error ? err.message : '질문을 생성하는 중 알 수 없는 오류가 발생했습니다.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
